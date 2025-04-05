@@ -9,7 +9,7 @@ on:
       threads:
         description: '下载线程数 (1-10)'
         required: true
-        default: '5'
+        default: '10'
       format:
         description: '输出格式'
         required: true
@@ -17,7 +17,7 @@ on:
         options:
           - txt
           - epub
-        default: 'txt'
+        default: 'epub'
 
 # 添加必要的权限
 permissions:
