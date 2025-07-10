@@ -1,0 +1,112 @@
+name: 在线下载小说
+
+on:
+  workflow_dispatch:  # 允许手动触发工作流
+    inputs:
+      novel_id:
+        description: '小说ID (从番茄小说URL中获取)'
+        required: true
+      threads:
+        description: '下载线程数 (1-10)'
+        required: true
+        default: '5'
+      format:
+        description: '输出格式'
+        required: true
+        type: choice
+        options:
+          - txt
+          - epub
+        default: 'txt'
+
+# 添加必要的权限
+permissions:
+  contents: read  # 允许读取仓库内容
+  actions: write  # 允许上传构建产物
+
+jobs:
+  download-novel:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v3
+        
+      - name: 设置Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+          
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          
+      - name: 确保cookie.json存在
+        run: |
+          if [ ! -f "./cookie.json" ]; then
+            echo '""' > "./cookie.json"
+          fi
+          
+      - name: 准备下载脚本
+        run: |
+          cat > download_novel.py << 'EOF'
+          import sys
+          import os
+          import importlib.util
+
+          # 获取参数
+          novel_id = sys.argv[1]
+          output_format = sys.argv[2].lower()
+          threads = int(sys.argv[3])
+          save_path = "novel_output"
+
+          # 确保输出目录存在
+          os.makedirs(save_path, exist_ok=True)
+
+          # 导入2.py中的函数
+          spec = importlib.util.spec_from_file_location("novel_downloader", "2.py")
+          novel_downloader = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(novel_downloader)
+
+          # 设置参数
+          novel_downloader.MAX_WORKERS = threads
+          novel_downloader.OUTPUT_FORMAT = output_format
+
+          # 启动下载
+          print(f"开始下载小说 ID: {novel_id}")
+          print(f"保存路径: {save_path}")
+          print(f"使用线程数: {threads}")
+          print(f"输出格式: {output_format}")
+          novel_downloader.Run(novel_id, save_path)
+          print("下载完成！")
+
+          # 列出下载的文件
+          print("\n下载的文件列表:")
+          for file in os.listdir(save_path):
+              file_path = os.path.join(save_path, file)
+              file_size = os.path.getsize(file_path) / 1024  # KB
+              print(f"- {file} ({file_size:.2f} KB)")
+          EOF
+          
+      - name: 下载小说
+        run: |
+          echo "开始下载小说..."
+          python download_novel.py "${{ github.event.inputs.novel_id }}" "${{ github.event.inputs.format }}" "${{ github.event.inputs.threads }}"
+          
+      - name: 压缩下载结果
+        run: |
+          cd novel_output && zip -r ../novel_files.zip *
+          
+      - name: 上传下载结果
+        uses: actions/upload-artifact@v4
+        with:
+          name: novel-${{ github.event.inputs.novel_id }}-${{ github.event.inputs.format }}
+          path: novel_files.zip
+          retention-days: 7  # 文件保存7天
+          
+      - name: 提供下载信息
+        run: |
+          echo "✅ 小说下载完成！"
+          echo "请点击上方 'Summary' 标签，然后在 'Artifacts' 部分下载小说文件。"
+          echo "文件保存期限为7天。" 
